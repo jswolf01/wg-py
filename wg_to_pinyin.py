@@ -667,6 +667,62 @@ class WadeGilesToPinyinConverter:
             re.IGNORECASE
         )
 
+    def _convert_single_syllable(self, original: str, aggressive: bool = False,
+                                   in_hyphenated_sequence: bool = False) -> str:
+        """Convert a single Wade-Giles syllable to Pinyin."""
+        normalized = normalize_apostrophe(original.lower())
+        normalized = normalized.replace('ü', 'ü')
+
+        # Skip common English words unless in aggressive mode or in a hyphenated sequence
+        if not aggressive and not in_hyphenated_sequence:
+            if normalized in ENGLISH_EXCLUSIONS_ANY_CASE:
+                return original
+            if normalized in ENGLISH_EXCLUSIONS_LOWERCASE and original.islower():
+                return original
+
+        # Skip context-sensitive syllables unless in hyphenated sequence
+        if not aggressive and not in_hyphenated_sequence and normalized in CONTEXT_SENSITIVE:
+            return original
+
+        if normalized in WG_TO_PINYIN:
+            pinyin = WG_TO_PINYIN[normalized]
+            return apply_case(original, pinyin)
+        return original
+
+    def _convert_hyphenated_sequence(self, sequence: str, aggressive: bool = False) -> str:
+        """
+        Convert a hyphenated sequence of Wade-Giles syllables to Pinyin.
+        Removes hyphens in the output (e.g., "Tse-tung" -> "Zedong").
+        """
+        parts = sequence.split('-')
+        converted_parts = []
+        all_are_wg_syllables = True
+        any_converted = False
+
+        for part in parts:
+            if not part:
+                continue
+            # Check if this part matches a WG syllable
+            normalized = normalize_apostrophe(part.lower()).replace('ü', 'ü')
+            if normalized in WG_TO_PINYIN:
+                converted = self._convert_single_syllable(part, aggressive=True,
+                                                          in_hyphenated_sequence=True)
+                converted_parts.append(converted)
+                if converted.lower() != part.lower():
+                    any_converted = True
+            else:
+                # Not a WG syllable, keep original
+                converted_parts.append(part)
+                all_are_wg_syllables = False
+
+        # Remove hyphens if:
+        # 1. At least one syllable was actually converted (spelling changed), OR
+        # 2. ALL parts are valid WG syllables (likely a Chinese name even if spellings match)
+        if any_converted or all_are_wg_syllables:
+            return ''.join(converted_parts)
+        else:
+            return sequence
+
     def convert_text(self, text: str, aggressive: bool = False) -> str:
         """
         Convert Wade-Giles text to Pinyin.
@@ -682,37 +738,21 @@ class WadeGilesToPinyinConverter:
         if not text:
             return text
 
+        # First, handle hyphenated sequences (e.g., "Tse-tung" -> "Zedong")
+        # Match sequences of syllables connected by hyphens
+        hyphen_pattern = re.compile(
+            r'\b([a-zA-ZüÜ\'\'`´ʼʻ]+(?:-[a-zA-ZüÜ\'\'`´ʼʻ]+)+)\b'
+        )
+
+        def hyphen_replacer(match):
+            return self._convert_hyphenated_sequence(match.group(1), aggressive)
+
+        text = hyphen_pattern.sub(hyphen_replacer, text)
+
+        # Then handle standalone syllables
         def replacer(match):
             original = match.group(1)
-            normalized = normalize_apostrophe(original.lower())
-            normalized = normalized.replace('ü', 'ü')
-
-            # Skip common English words unless in aggressive mode
-            if not aggressive:
-                # Check case-insensitive exclusions
-                if normalized in ENGLISH_EXCLUSIONS_ANY_CASE:
-                    return original
-                # Check lowercase-only exclusions (allow capitalized versions as they may be names)
-                if normalized in ENGLISH_EXCLUSIONS_LOWERCASE and original.islower():
-                    return original
-
-            # Skip context-sensitive syllables unless they appear hyphenated
-            if not aggressive and normalized in CONTEXT_SENSITIVE:
-                # Check if this appears to be in a Chinese context
-                # (preceded or followed by a hyphen connecting to another syllable)
-                start = match.start()
-                end = match.end()
-                before = text[max(0, start-1):start] if start > 0 else ''
-                after = text[end:min(len(text), end+1)] if end < len(text) else ''
-
-                # Only convert if hyphenated
-                if '-' not in before and '-' not in after:
-                    return original
-
-            if normalized in WG_TO_PINYIN:
-                pinyin = WG_TO_PINYIN[normalized]
-                return apply_case(original, pinyin)
-            return original
+            return self._convert_single_syllable(original, aggressive, in_hyphenated_sequence=False)
 
         return self.pattern.sub(replacer, text)
 
