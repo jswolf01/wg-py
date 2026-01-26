@@ -12,6 +12,7 @@ Usage:
 
 import re
 import sys
+import zipfile
 from pathlib import Path
 from docx import Document
 
@@ -756,10 +757,76 @@ class WadeGilesToPinyinConverter:
 
         return self.pattern.sub(replacer, text)
 
+    def _process_textboxes_in_xml(self, xml_content: bytes, aggressive: bool = False) -> bytes:
+        """
+        Process text boxes in the document XML using efficient regex-based replacement.
+
+        This approach is much faster and more memory-efficient than DOM parsing
+        for large documents. It finds all <w:t>...</w:t> elements within
+        <w:txbxContent> sections and applies conversion to their text content.
+
+        Args:
+            xml_content: The raw XML content of document.xml
+            aggressive: If True, convert all matches including common English words
+
+        Returns:
+            Modified XML content as bytes
+        """
+        # Decode to string for processing
+        xml_str = xml_content.decode('utf-8')
+
+        conversion_count = 0
+
+        # Find all txbxContent sections and process text within them
+        # Pattern to find text box content sections
+        txbx_pattern = re.compile(
+            r'(<w:txbxContent[^>]*>)(.*?)(</w:txbxContent>)',
+            re.DOTALL
+        )
+
+        def process_textbox_content(match):
+            nonlocal conversion_count
+            start_tag = match.group(1)
+            content = match.group(2)
+            end_tag = match.group(3)
+
+            # Within textbox content, find and convert text in <w:t> elements
+            # Pattern for <w:t>text</w:t> or <w:t xml:space="preserve">text</w:t>
+            text_pattern = re.compile(r'(<w:t[^>]*>)([^<]*)(</w:t>)')
+
+            def convert_text_element(text_match):
+                nonlocal conversion_count
+                open_tag = text_match.group(1)
+                text = text_match.group(2)
+                close_tag = text_match.group(3)
+
+                if text:
+                    converted = self.convert_text(text, aggressive=aggressive)
+                    if converted != text:
+                        conversion_count += 1
+                        return open_tag + converted + close_tag
+                return text_match.group(0)
+
+            processed_content = text_pattern.sub(convert_text_element, content)
+            return start_tag + processed_content + end_tag
+
+        modified_xml = txbx_pattern.sub(process_textbox_content, xml_str)
+
+        if conversion_count > 0:
+            print(f"  Converted {conversion_count} text elements in text boxes")
+
+        return modified_xml.encode('utf-8')
+
     def convert_docx(self, input_path: str, output_path: str = None,
                       aggressive: bool = False) -> str:
         """
         Convert Wade-Giles in a .docx file to Pinyin.
+
+        This method processes:
+        - Regular paragraphs
+        - Tables
+        - Headers and footers
+        - Text boxes (via direct XML manipulation)
 
         Args:
             input_path: Path to input .docx file
@@ -776,7 +843,8 @@ class WadeGilesToPinyinConverter:
         else:
             output_path = Path(output_path)
 
-        # Load the document
+        # First, process with python-docx for regular content
+        print(f"Processing regular content (paragraphs, tables, headers/footers)...")
         doc = Document(str(input_path))
 
         # Process paragraphs
@@ -794,7 +862,7 @@ class WadeGilesToPinyinConverter:
                             if run.text:
                                 run.text = self.convert_text(run.text, aggressive=aggressive)
 
-        # Process headers
+        # Process headers and footers
         for section in doc.sections:
             header = section.header
             for para in header.paragraphs:
@@ -808,10 +876,52 @@ class WadeGilesToPinyinConverter:
                     if run.text:
                         run.text = self.convert_text(run.text, aggressive=aggressive)
 
-        # Save the document
+        # Save intermediate result
         doc.save(str(output_path))
 
+        # Now process text boxes by directly modifying the XML
+        print(f"Processing text boxes...")
+        self._process_textboxes_in_docx(output_path, aggressive)
+
         return str(output_path)
+
+    def _process_textboxes_in_docx(self, docx_path: Path, aggressive: bool = False):
+        """
+        Process text boxes in a .docx file by modifying its XML directly.
+
+        Args:
+            docx_path: Path to the .docx file to modify in place
+            aggressive: If True, convert all matches including common English words
+        """
+        docx_path = Path(docx_path)
+
+        # Read the docx as a zip file
+        with zipfile.ZipFile(docx_path, 'r') as zf:
+            # Read document.xml
+            xml_content = zf.read('word/document.xml')
+
+            # Check if there are any text boxes
+            if b'txbxContent' not in xml_content:
+                print("  No text boxes found in document")
+                return
+
+            # Process the XML
+            modified_xml = self._process_textboxes_in_xml(xml_content, aggressive)
+
+            # Read all other files
+            other_files = {}
+            for item in zf.namelist():
+                if item != 'word/document.xml':
+                    other_files[item] = zf.read(item)
+
+        # Write the modified docx
+        with zipfile.ZipFile(docx_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            # Write modified document.xml
+            zf.writestr('word/document.xml', modified_xml)
+
+            # Write all other files unchanged
+            for name, content in other_files.items():
+                zf.writestr(name, content)
 
 
 def main():
