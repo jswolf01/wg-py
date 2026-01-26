@@ -512,6 +512,108 @@ for wg, py in UMLAUT_VARIANTS.items():
         WG_TO_PINYIN[wg] = py
 
 
+# Postal romanizations and other common variant spellings
+# These are not standard Wade-Giles but appear frequently in older texts
+POSTAL_ROMANIZATIONS = {
+    # Province names
+    'kwangsi': 'guangxi',
+    'kwangtung': 'guangdong',
+    'fukien': 'fujian',
+    'chekiang': 'zhejiang',
+    'kiangsi': 'jiangxi',
+    'kiangsu': 'jiangsu',
+    'shansi': 'shanxi',
+    'shensi': 'shaanxi',
+    'szechwan': 'sichuan',
+    'szechuan': 'sichuan',
+    'hopei': 'hebei',
+    'hopeh': 'hebei',
+    'honan': 'henan',
+    'hupei': 'hubei',
+    'hupeh': 'hubei',
+    'hunan': 'hunan',
+    'kansu': 'gansu',
+    'kweichow': 'guizhou',
+    'yunnan': 'yunnan',
+    'anhwei': 'anhui',
+    'chihli': 'zhili',
+    'fengtien': 'fengtian',
+    'manchuria': 'manchuria',  # Keep as is (not Chinese)
+
+    # Major cities
+    'peking': 'beijing',
+    'peiping': 'beiping',
+    'nanking': 'nanjing',
+    'canton': 'guangzhou',
+    'tientsin': 'tianjin',
+    'tsingtao': 'qingdao',
+    'chungking': 'chongqing',
+    'sian': 'xian',
+    'sinkiang': 'xinjiang',
+    'tsinghai': 'qinghai',
+    'ningsia': 'ningxia',
+    'suiyuan': 'suiyuan',
+
+    # Rivers and geographic features
+    'yangtze': 'yangzi',
+    'yangtse': 'yangzi',
+
+    # Common "kw" forms (Cantonese influence)
+    'kwang': 'guang',
+    'kwan': 'guan',
+    'kwai': 'guai',
+    'kwei': 'gui',
+}
+
+# Add postal romanizations to main dictionary
+for postal, pinyin in POSTAL_ROMANIZATIONS.items():
+    if postal not in WG_TO_PINYIN:
+        WG_TO_PINYIN[postal] = pinyin
+
+
+# PDF artifact: "ii" often represents ü (u with umlaut) in converted documents
+# This mapping handles syllables where ü appears as "ii"
+II_TO_UMLAUT_MAPPINGS = {
+    # ch + ii (aspirated, with umlaut) -> q + u
+    "ch'ii": 'qu',
+    "ch'iian": 'quan',
+    "ch'iieh": 'que',
+    "ch'iin": 'qun',
+
+    # ch + ii (unaspirated, with umlaut) -> j + u
+    'chii': 'ju',
+    'chiian': 'juan',
+    'chiieh': 'jue',
+    'chiin': 'jun',
+
+    # hs + ii -> x + u
+    'hsii': 'xu',
+    'hsiian': 'xuan',
+    'hsiieh': 'xue',
+    'hsiin': 'xun',
+
+    # l + ii -> l + ü
+    'lii': 'lü',
+    'liian': 'luan',
+    'liieh': 'lue',
+
+    # n + ii -> n + ü
+    'nii': 'nü',
+    'niieh': 'nue',
+
+    # y + ii -> y + u
+    'yii': 'yu',
+    'yiian': 'yuan',
+    'yiieh': 'yue',
+    'yiin': 'yun',
+}
+
+# Add ii mappings to main dictionary
+for ii_form, pinyin in II_TO_UMLAUT_MAPPINGS.items():
+    if ii_form not in WG_TO_PINYIN:
+        WG_TO_PINYIN[ii_form] = pinyin
+
+
 # Common English words that happen to match Wade-Giles patterns
 # These should NOT be converted unless in a clearly Chinese context
 # (e.g., hyphenated with other syllables or part of a proper name sequence)
