@@ -2,12 +2,13 @@
 """
 Wade-Giles to Pinyin Converter
 
-This script reads a .docx file, detects Wade-Giles romanization,
+This script reads a .docx or .pdf file, detects Wade-Giles romanization,
 and converts it to toneless Pinyin based on the standard conversion table.
 
 Usage:
     python wg_to_pinyin.py input.docx output.docx
     python wg_to_pinyin.py input.docx  # outputs to input_pinyin.docx
+    python wg_to_pinyin.py input.pdf   # outputs to input_pinyin.pdf
 """
 
 import re
@@ -16,6 +17,13 @@ import shutil
 import zipfile
 from pathlib import Path
 from docx import Document
+
+# Try to import PyMuPDF for PDF support
+try:
+    import fitz  # PyMuPDF
+    PDF_SUPPORT = True
+except ImportError:
+    PDF_SUPPORT = False
 
 
 # Wade-Giles to Pinyin conversion dictionary
@@ -1122,33 +1130,228 @@ class WadeGilesToPinyinConverter:
             for name, content in other_files.items():
                 zf.writestr(name, content)
 
+    def convert_pdf(self, input_path: str, output_path: str = None,
+                    aggressive: bool = False) -> str:
+        """
+        Convert Wade-Giles in a PDF file to Pinyin.
+
+        WARNING: PDF conversion has limitations:
+        - Text positioning may be slightly off after replacement
+        - Different-length replacements may cause visual artifacts
+        - Font matching is approximate
+
+        Args:
+            input_path: Path to input PDF file
+            output_path: Path for output file (optional)
+            aggressive: If True, convert all matches including common English words
+
+        Returns:
+            Path to the output file
+        """
+        if not PDF_SUPPORT:
+            raise ImportError(
+                "PDF support requires PyMuPDF. Install with: pip install pymupdf"
+            )
+
+        input_path = Path(input_path)
+
+        if output_path is None:
+            output_path = input_path.parent / f"{input_path.stem}_pinyin{input_path.suffix}"
+        else:
+            output_path = Path(output_path)
+
+        # Build list of search terms from our conversion dictionary
+        # We need to search for multi-character terms, not individual syllables
+        # Focus on terms that are distinctive enough to avoid false positives
+        search_replacements = self._build_pdf_search_terms(aggressive)
+
+        print(f"Opening PDF: {input_path}")
+        doc = fitz.open(str(input_path))
+        total_pages = len(doc)
+        total_replacements = 0
+
+        print(f"Processing {total_pages} pages...")
+
+        for page_num in range(total_pages):
+            page = doc[page_num]
+            page_replacements = 0
+
+            # Process each search term
+            for search_term, replacement in search_replacements.items():
+                instances = page.search_for(search_term)
+
+                if not instances:
+                    continue
+
+                for rect in instances:
+                    # Add redaction to remove original text
+                    page.add_redact_annot(rect, fill=(1, 1, 1))  # White fill
+
+                page.apply_redactions()
+
+                # Insert replacement text
+                for rect in instances:
+                    # Calculate insertion point (baseline)
+                    insert_point = fitz.Point(rect.x0, rect.y1 - 1)
+
+                    # Estimate font size from rect height
+                    fontsize = rect.height * 0.85
+
+                    # Insert the replacement text
+                    page.insert_text(
+                        insert_point,
+                        replacement,
+                        fontsize=fontsize,
+                        color=(0, 0, 0)
+                    )
+                    page_replacements += 1
+
+            total_replacements += page_replacements
+
+            # Progress indicator every 50 pages
+            if (page_num + 1) % 50 == 0 or page_num == total_pages - 1:
+                print(f"  Processed {page_num + 1}/{total_pages} pages...")
+
+        print(f"Saving converted PDF to: {output_path}")
+        doc.save(str(output_path), garbage=4, deflate=True)
+        doc.close()
+
+        print(f"Total replacements: {total_replacements}")
+        return str(output_path)
+
+    def _build_pdf_search_terms(self, aggressive: bool = False) -> dict:
+        """
+        Build a dictionary of search terms for PDF conversion.
+
+        For PDFs, we search for complete terms rather than syllables to avoid
+        false positives and positioning issues.
+
+        Returns:
+            Dictionary mapping search terms to their Pinyin replacements
+        """
+        terms = {}
+
+        # Postal romanizations (these are safe to convert)
+        postal_terms = {
+            'Peking': 'Beijing',
+            'Nanking': 'Nanjing',
+            'Canton': 'Guangzhou',
+            'Tientsin': 'Tianjin',
+            'Chungking': 'Chongqing',
+            'Kwangsi': 'Guangxi',
+            'Kwangtung': 'Guangdong',
+            'Fukien': 'Fujian',
+            'Szechwan': 'Sichuan',
+            'Szechuan': 'Sichuan',
+            'Chekiang': 'Zhejiang',
+            'Kiangsi': 'Jiangxi',
+            'Kiangsu': 'Jiangsu',
+            'Shansi': 'Shanxi',
+            'Shensi': 'Shaanxi',
+            'Hopei': 'Hebei',
+            'Hopeh': 'Hebei',
+            'Honan': 'Henan',
+            'Hupei': 'Hubei',
+            'Hupeh': 'Hubei',
+            'Kansu': 'Gansu',
+            'Kweichow': 'Guizhou',
+            'Anhwei': 'Anhui',
+            'Tsingtao': 'Qingdao',
+            'Sinkiang': 'Xinjiang',
+            'Tsinghai': 'Qinghai',
+            'Ningsia': 'Ningxia',
+            'Yangtze': 'Yangzi',
+            'Yangtse': 'Yangzi',
+        }
+        terms.update(postal_terms)
+
+        # Common hyphenated names (convert and remove hyphen)
+        hyphenated_names = {
+            'Tse-tung': 'Zedong',
+            'Tse-Tung': 'Zedong',
+            'En-lai': 'Enlai',
+            'En-Lai': 'Enlai',
+            'Hsiao-p\'ing': 'Xiaoping',
+            'Kai-shek': 'Jieshi',
+            'Yat-sen': 'Yixian',
+            'Chung-shan': 'Zhongshan',
+        }
+        terms.update(hyphenated_names)
+
+        # Dynasty and era names
+        dynasty_terms = {
+            'Ch\'ing': 'Qing',
+            'Ch\'in': 'Qin',
+            'T\'ang': 'Tang',
+            'Sung': 'Song',
+            'Ming': 'Ming',  # Same, but include for completeness
+            'Yuan': 'Yuan',  # Same
+            'Han': 'Han',    # Same
+        }
+        terms.update(dynasty_terms)
+
+        # Common standalone terms that are unambiguous
+        common_terms = {
+            'Confucius': 'Confucius',  # Keep as is (Latin name)
+            'Taoism': 'Daoism',
+            'Taoist': 'Daoist',
+            'Tao': 'Dao',
+        }
+        terms.update(common_terms)
+
+        # If aggressive mode, add more terms
+        if aggressive:
+            aggressive_terms = {
+                'Chou': 'Zhou',
+                'Chao': 'Zhao',
+                'Cheng': 'Zheng',
+                'Ching': 'Jing',
+                'Chin': 'Jin',
+                'Chu': 'Zhu',
+                'Kung': 'Gong',
+                'Tung': 'Dong',
+                'Hsiang': 'Xiang',
+                'Hsiung': 'Xiong',
+                'Hsien': 'Xian',
+            }
+            terms.update(aggressive_terms)
+
+        return terms
+
 
 def main():
     """Main entry point for command-line usage."""
     import argparse
 
     parser = argparse.ArgumentParser(
-        description='Convert Wade-Giles romanization to Pinyin in .docx files.',
+        description='Convert Wade-Giles romanization to Pinyin in .docx or .pdf files.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   python wg_to_pinyin.py document.docx
   python wg_to_pinyin.py input.docx output.docx
+  python wg_to_pinyin.py input.pdf output.pdf
   python wg_to_pinyin.py input.docx -o output.docx --aggressive
 
 Notes:
+  - Supports both .docx and .pdf files (PDF requires: pip install pymupdf)
   - By default, common English words (to, no, so, lung, tang, etc.) are NOT
     converted to avoid false positives.
   - Capitalized versions of ambiguous words ARE converted, as they may be
     Chinese proper names (e.g., "Sung Dynasty" -> "Song Dynasty").
   - Use --aggressive to convert ALL matches including common English words.
+
+PDF Limitations:
+  - Text positioning may be slightly off after replacement
+  - Different-length replacements may cause visual artifacts
+  - Font matching is approximate
         """
     )
 
-    parser.add_argument('input', help='Input .docx file')
-    parser.add_argument('output', nargs='?', help='Output .docx file (default: input_pinyin.docx)')
+    parser.add_argument('input', help='Input .docx or .pdf file')
+    parser.add_argument('output', nargs='?', help='Output file (default: input_pinyin.ext)')
     parser.add_argument('-o', '--output-file', dest='output_file',
-                        help='Output .docx file (alternative to positional argument)')
+                        help='Output file (alternative to positional argument)')
     parser.add_argument('-a', '--aggressive', action='store_true',
                         help='Convert all matches, including common English words')
 
@@ -1156,19 +1359,27 @@ Notes:
 
     input_file = args.input
     output_file = args.output or args.output_file
+    input_path = Path(input_file)
 
-    if not Path(input_file).exists():
+    if not input_path.exists():
         print(f"Error: Input file '{input_file}' not found.")
         sys.exit(1)
 
     converter = WadeGilesToPinyinConverter()
 
-    if args.aggressive:
-        # For aggressive mode, we need to modify convert_docx or pass a flag
-        # Let's modify the converter class to support this
-        output_path = converter.convert_docx(input_file, output_file, aggressive=True)
+    # Determine file type and convert accordingly
+    suffix = input_path.suffix.lower()
+
+    if suffix == '.pdf':
+        if not PDF_SUPPORT:
+            print("Error: PDF support requires PyMuPDF. Install with: pip install pymupdf")
+            sys.exit(1)
+        output_path = converter.convert_pdf(input_file, output_file, aggressive=args.aggressive)
+    elif suffix in ['.docx', '.doc']:
+        output_path = converter.convert_docx(input_file, output_file, aggressive=args.aggressive)
     else:
-        output_path = converter.convert_docx(input_file, output_file)
+        print(f"Error: Unsupported file type '{suffix}'. Supported: .docx, .pdf")
+        sys.exit(1)
 
     print(f"Conversion complete. Output saved to: {output_path}")
 
