@@ -835,11 +835,13 @@ class WadeGilesToPinyinConverter:
         """
         Convert a hyphenated sequence of Wade-Giles syllables to Pinyin.
         Removes hyphens in the output (e.g., "Tse-tung" -> "Zedong").
+        Only first part is capitalized; subsequent parts are lowercase.
         """
         parts = sequence.split('-')
         converted_parts = []
         all_are_wg_syllables = True
         any_converted = False
+        is_first_part = True
 
         for part in parts:
             if not part:
@@ -849,13 +851,21 @@ class WadeGilesToPinyinConverter:
             if normalized in WG_TO_PINYIN:
                 converted = self._convert_single_syllable(part, aggressive=True,
                                                           in_hyphenated_sequence=True)
-                converted_parts.append(converted)
+                # First part: preserve case; subsequent parts: lowercase
+                if is_first_part:
+                    converted_parts.append(converted)
+                else:
+                    converted_parts.append(converted.lower())
                 if converted.lower() != part.lower():
                     any_converted = True
             else:
                 # Not a WG syllable, keep original
-                converted_parts.append(part)
+                if is_first_part:
+                    converted_parts.append(part)
+                else:
+                    converted_parts.append(part.lower())
                 all_are_wg_syllables = False
+            is_first_part = False
 
         # Remove hyphens if:
         # 1. At least one syllable was actually converted (spelling changed), OR
@@ -1185,20 +1195,41 @@ class WadeGilesToPinyinConverter:
             parts = normalized.split('-')
             converted_parts = []
             any_converted = False
+            all_are_wg = True
+            is_first_part = True
 
             for part in parts:
                 part_lower = part.lower()
-                if part_lower in wg_lookup:
-                    pinyin = wg_lookup[part_lower]
-                    # Apply case from original part
-                    converted_parts.append(apply_case(part, pinyin))
-                    any_converted = True
-                else:
-                    # Keep original if not in dictionary
-                    converted_parts.append(part)
+                # Check if it's a valid WG syllable (in full dictionary)
+                is_wg_syllable = part_lower in WG_TO_PINYIN
+                if not is_wg_syllable:
+                    all_are_wg = False
 
-            if any_converted:
-                # Join without hyphens for proper Pinyin names
+                if part_lower in wg_lookup:
+                    # This syllable changes when converted
+                    pinyin = wg_lookup[part_lower]
+                    if is_first_part:
+                        converted_parts.append(apply_case(part, pinyin))
+                    else:
+                        converted_parts.append(pinyin.lower())
+                    any_converted = True
+                elif is_wg_syllable:
+                    # Valid WG syllable but doesn't change (e.g., 'en' -> 'en')
+                    pinyin = WG_TO_PINYIN[part_lower]
+                    if is_first_part:
+                        converted_parts.append(apply_case(part, pinyin))
+                    else:
+                        converted_parts.append(pinyin.lower())
+                else:
+                    # Not a WG syllable, keep original
+                    if is_first_part:
+                        converted_parts.append(part)
+                    else:
+                        converted_parts.append(part.lower())
+                is_first_part = False
+
+            # Return joined form if any part was converted OR all parts are valid WG
+            if any_converted or all_are_wg:
                 return ''.join(converted_parts)
             return None
 
@@ -1361,14 +1392,23 @@ class WadeGilesToPinyinConverter:
                         parts = normalized.split('-')
                         converted_parts = []
                         any_converted = False
+                        is_first_part = True
                         for part in parts:
                             part_lower = part.lower()
                             if part_lower in wg_lookup:
                                 pinyin = wg_lookup[part_lower]
-                                converted_parts.append(apply_case(part, pinyin))
+                                # First part: preserve case; subsequent parts: lowercase
+                                if is_first_part:
+                                    converted_parts.append(apply_case(part, pinyin))
+                                else:
+                                    converted_parts.append(pinyin.lower())
                                 any_converted = True
                             else:
-                                converted_parts.append(part)
+                                if is_first_part:
+                                    converted_parts.append(part)
+                                else:
+                                    converted_parts.append(part.lower())
+                            is_first_part = False
                         if any_converted:
                             replacement = ''.join(converted_parts)
                     # Finally try single syllable lookup
@@ -1548,15 +1588,15 @@ class WadeGilesToPinyinConverter:
                         seen.add(variant)
         terms.extend(new_terms)
 
-        # Add common hyphenated names
+        # Add common hyphenated names (second part lowercase per Pinyin convention)
         hyphenated = [
-            ('Ên-Ssu', 'EnSi'), ('Ên-Fu', 'EnFu'),
-            ('Êrh-Yuan', 'ErYuan'), ('Êrh-Chou', 'ErZhou'),
+            ('Ên-Ssu', 'Ensi'), ('Ên-Fu', 'Enfu'),
+            ('Êrh-Yuan', 'Eryuan'), ('Êrh-Chou', 'Erzhou'),
             ('Tse-tung', 'Zedong'), ('Tse-Tung', 'Zedong'),
             ('En-lai', 'Enlai'), ('En-Lai', 'Enlai'),
-            ("Ch'ê-Chiang", 'CheJiang'), ("Ch'ê-Men", 'CheMen'),
-            ("Ch'ên-Chiang", 'ChenJiang'), ("Ch'ên-Pu", 'ChenBu'),
-            ("Ch'êng-Kung", 'ChengGong'), ("Ch'êng-Ho", 'ChengHe'),
+            ("Ch'ê-Chiang", 'Chejiang'), ("Ch'ê-Men", 'Chemen'),
+            ("Ch'ên-Chiang", 'Chenjiang'), ("Ch'ên-Pu", 'Chenbu'),
+            ("Ch'êng-Kung", 'Chenggong'), ("Ch'êng-Ho", 'Chenghe'),
             ("Hsiao-p'ing", 'Xiaoping'), ("Hsiao-P'ing", 'Xiaoping'),
             ('Kai-shek', 'Jieshi'), ('Kai-Shek', 'Jieshi'),
             ('Yat-sen', 'Yixian'), ('Yat-Sen', 'Yixian'),

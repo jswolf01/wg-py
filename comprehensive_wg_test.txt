@@ -1,0 +1,156 @@
+# Comprehensive Wade-Giles to Pinyin Conversion Test Document
+# This document contains examples of all Wade-Giles romanization patterns for testing.
+
+## Part I: Dynasties and Historical Overview
+
+The Chou dynasty established the foundations of Chinese civilization. The period saw rulers from various regions: the lords of Ch'in eventually unified China, while the earlier Ch'i and Ch'u states competed for dominance. The Sung dynasty brought cultural flourishing, followed by the Yuan conquest under Mongol rule. The Ming restored Han Chinese rule, and the Ch'ing dynasty was the last imperial house.
+
+During the T'ang period, the capital at Ch'ang-an attracted scholars from across Asia. The Han dynasty had earlier established the civil service system. Officials like Kung-sun and K'ung-fu administered vast territories.
+
+## Part II: Geographic Names and Postal Romanizations
+
+The provinces of China include: Kwangsi (Kwang-hsi), Kwangtung (Kwang-tung), Fukien, Chekiang, Kiangsi, Kiangsu, Shansi, Shensi, Szechwan (also Szechuan), Hopei (Hopeh), Honan, Hupei (Hupeh), Hunan, Kansu, Kweichow, Yunnan, and Anhwei.
+
+Major cities: Peking (Pei-ching) served as the capital, while Peiping was its earlier name. Nanking (Nan-ching) was the southern capital. Tientsin, Tsingtao, Chungking, and Sian were important centers. Canton served as the gateway for foreign trade. The western region of Sinkiang and Tsinghai bordered Central Asia. Ningsia lay along the Yellow River.
+
+Rivers: The Yangtze (also Yangtse) and Yellow Rivers shaped Chinese geography.
+
+## Part III: Personal Names - Aspirated Consonants (with apostrophe)
+
+The revolutionary leader Sun Yat-sen (also known by his courtesy name Chung-shan) advocated for reform. Chiang Kai-shek led the Nationalist government. Chou En-lai served as premier under Mao Tse-tung. Teng Hsiao-p'ing implemented economic reforms.
+
+Other notable figures: Ch'en Tu-hsiu, Ch'iu Chin, T'an Ssu-t'ung, K'ang Yu-wei, Ts'ai Yuan-p'ei, T'ao Ch'ien, P'an Ku, and Ts'ao Ts'ao.
+
+## Part IV: Comprehensive Syllable Coverage
+
+### CH- syllables (unaspirated -> ZH-/J-)
+Officials named Cha, Chai, Chan, Chang, Chao, Che, Chen, Cheng administered the realm.
+Scholars Chi, Chia, Chiang, Chiao, Chieh, Chien, Chih, Chin, Ching, Chiu, Chiung pursued knowledge.
+Generals Cho, Chou, Chu, Chua, Chuai, Chuan, Chuang, Chui, Chun, Chung led armies.
+The sage Chu used the variant form.
+
+### CH'- syllables (aspirated -> CH-/Q-)
+Ministers Ch'a, Ch'ai, Ch'an, Ch'ang, Ch'ao served the throne.
+Advisors Ch'e, Ch'en, Ch'eng provided counsel.
+Nobles Ch'i, Ch'ia, Ch'iang, Ch'iao, Ch'ieh, Ch'ien, Ch'ih, Ch'in, Ch'ing, Ch'iu, Ch'iung held fiefs.
+Lords Ch'o, Ch'ou, Ch'u, Ch'uai, Ch'uan, Ch'uang, Ch'ui, Ch'un, Ch'ung ruled territories.
+
+### CH- with umlaut (-> JU-)
+The philosopher Chu (variant form Chu) wrote extensively. Masters Chuan, Chueh, Chun taught disciples.
+The aspirated forms Ch'u, Ch'uan, Ch'ueh, Ch'un also appear.
+
+### HS- syllables (-> X-)
+Scholars Hsi, Hsia, Hsiang, Hsiao, Hsieh, Hsien, Hsin, Hsing, Hsiu, Hsiung taught at academies.
+The forms Hsu, Hsuan, Hsueh, Hsun with umlaut complete the series.
+
+### J- syllables (-> R-)
+Generals Jan, Jang, Jao, Je, Jen, Jeng led campaigns.
+Officials Jih, Jo, Jou, Ju, Juan, Jui, Jun, Jung administered justice.
+
+### K- syllables (unaspirated -> G-)
+Lords Ka, Kai, Kan, Kang, Kao, Kei, Ken, Keng ruled domains.
+Officials Ko, Kou, Ku, Kua, Kuai, Kuan, Kuang, Kuei, Kun, Kung, Kuo served faithfully.
+
+### K'- syllables (aspirated -> K-)
+Nobles K'a, K'ai, K'an, K'ang, K'ao held estates.
+Ministers K'en, K'eng, K'o, K'ou, K'u, K'ua, K'uai, K'uan, K'uang, K'uei, K'un, K'ung, K'uo administered provinces.
+
+### L- syllables
+Scholars La, Lai, Lan, Lang, Lao, Le, Lei, Leng taught philosophy.
+Officials Li, Liang, Liao, Lieh, Lien, Lin, Ling, Liu served the court.
+Generals Lo, Lou, Lu, Luan, Lun, Lung commanded troops.
+The variant form Lu (with umlaut) also appears, along with Luan and Lueh.
+
+### M- syllables
+Ministers Ma, Mai, Man, Mang, Mao, Mei, Men, Meng governed.
+Officials Mi, Miao, Mieh, Mien, Min, Ming, Miu managed affairs.
+Generals Mo, Mou, Mu led forces.
+
+### N- syllables
+Lords Na, Nai, Nan, Nang, Nao, Nei, Nen, Neng ruled.
+Officials Ni, Niang, Niao, Nieh, Nien, Nin, Ning, Niu administered.
+Generals No, Nu, Nuan, Nung commanded. The form Nu (with umlaut) and Nueh also appear.
+
+### P- syllables (unaspirated -> B-)
+Ministers Pa, Pai, Pan, Pang, Pao, Pei, Pen, Peng served.
+Officials Pi, Piao, Pieh, Pien, Pin, Ping governed.
+Generals Po, Pu led armies.
+
+### P'- syllables (aspirated -> P-)
+Lords P'a, P'ai, P'an, P'ang, P'ao, P'ei, P'en, P'eng held power.
+Officials P'i, P'iao, P'ieh, P'ien, P'in, P'ing administered.
+Generals P'o, P'ou, P'u commanded.
+
+### S- and SH- syllables
+Scholars Sa, Sai, San, Sang, Sao, Se, Sen, Seng studied texts.
+Officials Sha, Shai, Shan, Shang, Shao, She, Shen, Sheng governed.
+Generals Shih, Shou, Shu, Shua, Shuai, Shuan, Shuang, Shui, Shun, Shuo led campaigns.
+The forms So, Sou, Ssu, Su, Suan, Sui, Sun, Sung, Szu also appear.
+
+### T- syllables (unaspirated -> D-)
+Ministers Ta, Tai, Tan, Tang, Tao, Te, Teng served the throne.
+Officials Ti, Tiao, Tieh, Tien, Ting, Tiu administered.
+Generals To, Tou, Tu, Tuan, Tui, Tun, Tung commanded armies.
+
+### T'- syllables (aspirated -> T-)
+Lords T'a, T'ai, T'an, T'ang, T'ao, T'e, T'eng ruled.
+Officials T'i, T'iao, T'ieh, T'ien, T'ing governed.
+Generals T'o, T'ou, T'u, T'uan, T'ui, T'un, T'ung led forces.
+
+### TS- syllables (unaspirated -> Z-)
+Scholars Tsa, Tsai, Tsan, Tsang, Tsao, Tse, Tsei, Tsen, Tseng studied.
+Officials Tso, Tsou, Tsu, Tsuan, Tsui, Tsun, Tsung administered.
+The variant Tzu completes the series.
+
+### TS'- syllables (aspirated -> C-)
+Ministers Ts'a, Ts'ai, Ts'an, Ts'ang, Ts'ao, Ts'e, Ts'en, Ts'eng served.
+Officials Ts'o, Ts'ou, Ts'u, Ts'uan, Ts'ui, Ts'un, Ts'ung governed.
+The variant Tz'u also appears.
+
+### W- syllables
+Lords Wa, Wai, Wan, Wang, Wei, Wen, Weng, Wo, Wu ruled.
+
+### Y- syllables
+Scholars Ya, Yai, Yang, Yao, Yeh, Yen, Yin, Ying, Yo studied.
+Officials Yu (also written Yu with umlaut), Yuan, Yueh, Yun administered.
+The form Yung governed the eastern provinces.
+
+### Simple vowels and special forms
+Officials named A, Ai, An, Ang, Ao served in minor positions.
+The syllables En, Erh (also Er) appear in compounds.
+Officials O, Ou managed records.
+Scholars Fa, Fan, Fang, Fei, Fen, Feng, Fo, Fou, Fu taught.
+Generals Ha, Hai, Han, Hang, Hao, Hei, Hen, Heng commanded.
+Lords Ho, Hou, Hu, Hua, Huai, Huan, Huang, Hui, Hun, Hung, Huo ruled territories.
+
+### Standalone syllable I
+The sage I (Yi in pinyin) taught wisdom.
+
+## Part V: Diacritic Variations
+
+The circumflex appears in forms like Ch'e (-> Che), Ch'en (-> Chen), as well as Che (-> Zhe).
+The breve marks certain vowels in historical texts.
+The umlaut u appears in: Chu/Chuan/Chueh/Chun and Ch'u/Ch'uan/Ch'ueh/Ch'un (-> Ju/Juan/Jue/Jun and Qu/Quan/Que/Qun).
+Also: Hsu/Hsuan/Hsueh/Hsun (-> Xu/Xuan/Xue/Xun), Lu/Lueh (-> Lu/Lue), Nu/Nueh (-> Nu/Nue), and Yu/Yuan/Yueh/Yun (-> Yu/Yuan/Yue/Yun).
+
+## Part VI: Taoism and Philosophy
+
+The philosophy of Taoism (Daoism) emphasizes the Tao (Dao). Taoist (Daoist) practitioners follow the teachings of Lao-tzu. Taoists gather at mountain temples to meditate.
+
+## Part VII: Hyphenated Names Test
+
+The leaders Mao Tse-tung, Chou En-lai, Teng Hsiao-p'ing, Sun Yat-sen, and Chiang Kai-shek shaped modern China.
+Regional officials: governors of En-fu, Erh-yuan, A-kuan, Ai-ssu, An-yuan administered their territories.
+The city of Chung-shan commemorates Sun Yat-sen.
+
+## Part VIII: ii -> u Umlaut Mappings (PDF artifacts)
+
+In some PDF conversions, the umlaut u appears as "ii":
+Chii -> Ju, Chiian -> Juan, Chiieh -> Jue, Chiin -> Jun
+Ch'ii -> Qu, Ch'iian -> Quan, Ch'iieh -> Que, Ch'iin -> Qun
+Hsii -> Xu, Hsiian -> Xuan, Hsiieh -> Xue, Hsiin -> Xun
+Lii -> Lu, Liian -> Luan, Liieh -> Lue
+Nii -> Nu, Niieh -> Nue
+Yii -> Yu, Yiian -> Yuan, Yiieh -> Yue, Yiin -> Yun
+
+## End of Test Document
