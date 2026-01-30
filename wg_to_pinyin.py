@@ -12,6 +12,7 @@ Usage:
 
 import re
 import sys
+import shutil
 import zipfile
 from pathlib import Path
 from docx import Document
@@ -919,6 +920,87 @@ class WadeGilesToPinyinConverter:
 
         return modified_xml.encode('utf-8')
 
+    def _process_all_text_in_xml(self, xml_content: bytes, aggressive: bool = False) -> bytes:
+        """
+        Process ALL text in the document XML using regex-based replacement.
+
+        This method processes all <w:t> elements in the document, not just those
+        in text boxes. Used as a fallback when python-docx fails to load large documents.
+
+        Args:
+            xml_content: The raw XML content of document.xml
+            aggressive: If True, convert all matches including common English words
+
+        Returns:
+            Modified XML content as bytes
+        """
+        # Decode to string for processing
+        xml_str = xml_content.decode('utf-8')
+
+        conversion_count = 0
+
+        # Pattern for all <w:t>text</w:t> elements
+        text_pattern = re.compile(r'(<w:t[^>]*>)([^<]*)(</w:t>)')
+
+        def convert_text_element(text_match):
+            nonlocal conversion_count
+            open_tag = text_match.group(1)
+            text = text_match.group(2)
+            close_tag = text_match.group(3)
+
+            if text:
+                converted = self.convert_text(text, aggressive=aggressive)
+                if converted != text:
+                    conversion_count += 1
+                    return open_tag + converted + close_tag
+            return text_match.group(0)
+
+        modified_xml = text_pattern.sub(convert_text_element, xml_str)
+
+        print(f"  Converted {conversion_count} text elements")
+
+        return modified_xml.encode('utf-8')
+
+    def _convert_docx_via_xml(self, input_path: Path, output_path: Path,
+                               aggressive: bool = False) -> str:
+        """
+        Convert a .docx file using direct XML manipulation only.
+
+        This is used as a fallback when python-docx fails to load the document
+        (e.g., due to XML parser limits with very large documents).
+
+        Args:
+            input_path: Path to input .docx file
+            output_path: Path for output file
+            aggressive: If True, convert all matches including common English words
+
+        Returns:
+            Path to the output file
+        """
+        # Copy the input file to output first
+        shutil.copy2(input_path, output_path)
+
+        # Process the XML directly
+        with zipfile.ZipFile(output_path, 'r') as zf:
+            xml_content = zf.read('word/document.xml')
+
+            # Process ALL text in the document
+            modified_xml = self._process_all_text_in_xml(xml_content, aggressive)
+
+            # Read all other files
+            other_files = {}
+            for item in zf.namelist():
+                if item != 'word/document.xml':
+                    other_files[item] = zf.read(item)
+
+        # Write the modified docx
+        with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr('word/document.xml', modified_xml)
+            for name, content in other_files.items():
+                zf.writestr(name, content)
+
+        return str(output_path)
+
     def convert_docx(self, input_path: str, output_path: str = None,
                       aggressive: bool = False) -> str:
         """
@@ -929,6 +1011,9 @@ class WadeGilesToPinyinConverter:
         - Tables
         - Headers and footers
         - Text boxes (via direct XML manipulation)
+
+        For very large documents that exceed XML parser limits, it automatically
+        falls back to direct XML processing.
 
         Args:
             input_path: Path to input .docx file
@@ -945,45 +1030,57 @@ class WadeGilesToPinyinConverter:
         else:
             output_path = Path(output_path)
 
-        # First, process with python-docx for regular content
-        print(f"Processing regular content (paragraphs, tables, headers/footers)...")
-        doc = Document(str(input_path))
+        # Try to process with python-docx first
+        try:
+            print("Processing regular content (paragraphs, tables, headers/footers)...")
+            doc = Document(str(input_path))
 
-        # Process paragraphs
-        for para in doc.paragraphs:
-            for run in para.runs:
-                if run.text:
-                    run.text = self.convert_text(run.text, aggressive=aggressive)
-
-        # Process tables
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    for para in cell.paragraphs:
-                        for run in para.runs:
-                            if run.text:
-                                run.text = self.convert_text(run.text, aggressive=aggressive)
-
-        # Process headers and footers
-        for section in doc.sections:
-            header = section.header
-            for para in header.paragraphs:
+            # Process paragraphs
+            for para in doc.paragraphs:
                 for run in para.runs:
                     if run.text:
                         run.text = self.convert_text(run.text, aggressive=aggressive)
 
-            footer = section.footer
-            for para in footer.paragraphs:
-                for run in para.runs:
-                    if run.text:
-                        run.text = self.convert_text(run.text, aggressive=aggressive)
+            # Process tables
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for para in cell.paragraphs:
+                            for run in para.runs:
+                                if run.text:
+                                    run.text = self.convert_text(run.text, aggressive=aggressive)
 
-        # Save intermediate result
-        doc.save(str(output_path))
+            # Process headers and footers
+            for section in doc.sections:
+                header = section.header
+                for para in header.paragraphs:
+                    for run in para.runs:
+                        if run.text:
+                            run.text = self.convert_text(run.text, aggressive=aggressive)
 
-        # Now process text boxes by directly modifying the XML
-        print(f"Processing text boxes...")
-        self._process_textboxes_in_docx(output_path, aggressive)
+                footer = section.footer
+                for para in footer.paragraphs:
+                    for run in para.runs:
+                        if run.text:
+                            run.text = self.convert_text(run.text, aggressive=aggressive)
+
+            # Save intermediate result
+            doc.save(str(output_path))
+
+            # Now process text boxes by directly modifying the XML
+            print("Processing text boxes...")
+            self._process_textboxes_in_docx(output_path, aggressive)
+
+        except Exception as e:
+            # Check if this is an XML parser error (common with large PDF-converted docs)
+            error_msg = str(e)
+            if 'XMLSyntaxError' in type(e).__name__ or 'AttValue' in error_msg or 'lxml' in error_msg:
+                print(f"Document too large for standard processing. Using direct XML mode...")
+                print("Processing all text via XML manipulation...")
+                return self._convert_docx_via_xml(input_path, output_path, aggressive)
+            else:
+                # Re-raise other errors
+                raise
 
         return str(output_path)
 
