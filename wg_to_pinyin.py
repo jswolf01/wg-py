@@ -1135,8 +1135,9 @@ class WadeGilesToPinyinConverter:
         """
         Convert Wade-Giles in a PDF file to Pinyin.
 
-        Uses Times New Roman (serif) font and adjusts text placement for
-        proper baseline alignment.
+        Uses word-by-word extraction to avoid replacing text inside words.
+        Only converts proper nouns (capitalized words not at sentence start).
+        Uses Times New Roman (serif) font at 10.5pt.
 
         WARNING: PDF conversion has limitations:
         - Text positioning may be slightly off after replacement
@@ -1163,15 +1164,17 @@ class WadeGilesToPinyinConverter:
         else:
             output_path = Path(output_path)
 
-        # Build list of search terms from our conversion dictionary
-        # Uses the FULL WG_TO_PINYIN dictionary for comprehensive conversion
-        search_replacements = self._build_pdf_search_terms(aggressive)
+        # Build conversion lookup (lowercase WG -> pinyin)
+        wg_lookup = self._build_pdf_lookup()
 
         print(f"Opening PDF: {input_path}")
-        print(f"Loaded {len(search_replacements)} search terms for conversion")
+        print(f"Loaded {len(wg_lookup)} conversion terms")
         doc = fitz.open(str(input_path))
         total_pages = len(doc)
         total_replacements = 0
+
+        # Fixed font size for consistent appearance
+        FONT_SIZE = 10.5
 
         print(f"Processing {total_pages} pages...")
 
@@ -1179,37 +1182,121 @@ class WadeGilesToPinyinConverter:
             page = doc[page_num]
             page_replacements = 0
 
-            # Process each search term
-            for search_term, replacement in search_replacements.items():
-                instances = page.search_for(search_term)
+            # Extract words with their positions
+            # Returns list of (x0, y0, x1, y1, "word", block_no, line_no, word_no)
+            words = page.get_text("words")
 
-                if not instances:
-                    continue
+            # Group words by line for sentence-start detection
+            lines = {}
+            for word_info in words:
+                x0, y0, x1, y1, word, block_no, line_no, word_no = word_info
+                line_key = (block_no, line_no)
+                if line_key not in lines:
+                    lines[line_key] = []
+                lines[line_key].append(word_info)
 
-                for rect in instances:
-                    # Add redaction to remove original text
-                    page.add_redact_annot(rect, fill=(1, 1, 1))  # White fill
+            # Sort words within each line by x position
+            for line_key in lines:
+                lines[line_key].sort(key=lambda w: w[0])  # Sort by x0
 
+            # Track replacements to make (collect first, apply after)
+            replacements_to_make = []
+
+            for line_key, line_words in lines.items():
+                for i, word_info in enumerate(line_words):
+                    x0, y0, x1, y1, word, block_no, line_no, word_no = word_info
+
+                    # Skip empty or very short words
+                    if len(word) < 2:
+                        continue
+
+                    # Normalize the word for lookup
+                    # Strip punctuation from edges for matching
+                    word_clean = word.strip('.,;:!?()[]"\'')
+                    if not word_clean:
+                        continue
+
+                    word_lower = normalize_apostrophe(word_clean.lower())
+
+                    # Check if this word is in our WG dictionary
+                    if word_lower not in wg_lookup:
+                        continue
+
+                    # PROPER NOUN CHECK: Only convert if it's a proper noun
+                    # A proper noun is capitalized but NOT at sentence start
+
+                    # Check if word is capitalized
+                    if not word_clean[0].isupper():
+                        # Lowercase word - skip unless aggressive mode
+                        if not aggressive:
+                            continue
+
+                    # Check if this is at sentence start (previous word ends with . ! ?)
+                    is_sentence_start = False
+                    if i == 0:
+                        # First word in line - could be sentence start
+                        # Check if this is likely a new sentence
+                        is_sentence_start = True
+                    else:
+                        prev_word = line_words[i - 1][4]  # Previous word text
+                        if prev_word and prev_word[-1] in '.!?':
+                            is_sentence_start = True
+
+                    # Skip sentence-start words unless they're clearly WG
+                    # (multi-syllable with apostrophe, or known postal romanization)
+                    if is_sentence_start and not aggressive:
+                        # Allow conversion if it's clearly WG (has apostrophe or hyphen)
+                        if "'" not in word_clean and "-" not in word_clean:
+                            # Check if it's a known postal romanization (always proper nouns)
+                            if word_lower not in POSTAL_ROMANIZATIONS:
+                                continue
+
+                    # Get the pinyin replacement
+                    pinyin = wg_lookup[word_lower]
+
+                    # Apply case from original word
+                    replacement = apply_case(word_clean, pinyin)
+
+                    # Preserve any punctuation that was stripped
+                    if word != word_clean:
+                        # Find leading/trailing punctuation
+                        leading = ""
+                        trailing = ""
+                        for c in word:
+                            if c in '.,;:!?()[]"\' ':
+                                leading += c
+                            else:
+                                break
+                        for c in reversed(word):
+                            if c in '.,;:!?()[]"\' ':
+                                trailing = c + trailing
+                            else:
+                                break
+                        replacement = leading + replacement + trailing
+
+                    # Create rect for this word
+                    rect = fitz.Rect(x0, y0, x1, y1)
+                    replacements_to_make.append((rect, replacement))
+
+            # Apply all replacements for this page
+            for rect, replacement in replacements_to_make:
+                # Add redaction to remove original text
+                page.add_redact_annot(rect, fill=(1, 1, 1))  # White fill
+
+            if replacements_to_make:
                 page.apply_redactions()
 
                 # Insert replacement text
-                for rect in instances:
-                    # Calculate insertion point (baseline)
-                    # Adjust upward by approximately half a letter height
-                    # The rect includes some padding, so we position at y1 minus
-                    # about 35% of the rect height to align with baseline
-                    baseline_offset = rect.height * 0.35
-                    insert_point = fitz.Point(rect.x0, rect.y1 - baseline_offset)
+                for rect, replacement in replacements_to_make:
+                    # Calculate insertion point for baseline alignment
+                    # Position text at baseline (bottom of rect minus small offset)
+                    insert_point = fitz.Point(rect.x0, rect.y1 - 2)
 
-                    # Estimate font size from rect height
-                    fontsize = rect.height * 0.85
-
-                    # Insert the replacement text using Times Roman (serif font)
-                    # PyMuPDF built-in fonts: "times-roman", "times-bold", etc.
+                    # Insert the replacement text using Times Roman at 10.5pt
                     page.insert_text(
                         insert_point,
                         replacement,
-                        fontsize=fontsize,
+                        fontsize=FONT_SIZE,
                         fontname="times-roman",
                         color=(0, 0, 0)
                     )
@@ -1227,6 +1314,43 @@ class WadeGilesToPinyinConverter:
 
         print(f"Total replacements: {total_replacements}")
         return str(output_path)
+
+    def _build_pdf_lookup(self) -> dict:
+        """
+        Build a lookup dictionary for PDF word-by-word conversion.
+
+        Returns a dictionary mapping lowercase WG terms to their pinyin equivalents.
+        This is used for whole-word matching (not substring search).
+
+        Returns:
+            Dictionary mapping lowercase WG terms to pinyin
+        """
+        lookup = {}
+
+        # Add all WG_TO_PINYIN entries
+        for wg, pinyin in WG_TO_PINYIN.items():
+            # Skip if identical
+            if wg == pinyin:
+                continue
+            # Skip very short terms
+            if len(wg) < 2:
+                continue
+            # Normalize and add
+            lookup[wg.lower()] = pinyin
+
+        # Add hyphenated name components that should be joined
+        # These are handled specially - the hyphenated form maps to joined pinyin
+        hyphenated = {
+            'tse-tung': 'zedong',
+            'en-lai': 'enlai',
+            "hsiao-p'ing": 'xiaoping',
+            'kai-shek': 'jieshi',
+            'yat-sen': 'yixian',
+            'chung-shan': 'zhongshan',
+        }
+        lookup.update(hyphenated)
+
+        return lookup
 
     def _build_pdf_search_terms(self, aggressive: bool = False) -> dict:
         """
