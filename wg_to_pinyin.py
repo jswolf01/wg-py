@@ -708,6 +708,36 @@ def normalize_apostrophe(text: str) -> str:
     return text
 
 
+def normalize_diacritics(text: str) -> str:
+    """
+    Normalize diacritical marks used in Wade-Giles romanization.
+
+    Some sources use circumflex (^) or other diacritics on vowels.
+    For example: Ên, Êrh, Ê (with circumflex) should become En, Erh, E.
+    """
+    # Mapping of accented characters to their base forms
+    diacritic_map = {
+        # Uppercase with circumflex
+        'Â': 'A', 'Ê': 'E', 'Î': 'I', 'Ô': 'O', 'Û': 'U',
+        # Lowercase with circumflex
+        'â': 'a', 'ê': 'e', 'î': 'i', 'ô': 'o', 'û': 'u',
+        # Uppercase with breve
+        'Ă': 'A', 'Ĕ': 'E', 'Ĭ': 'I', 'Ŏ': 'O', 'Ŭ': 'U',
+        # Lowercase with breve
+        'ă': 'a', 'ĕ': 'e', 'ĭ': 'i', 'ŏ': 'o', 'ŭ': 'u',
+        # Uppercase with macron
+        'Ā': 'A', 'Ē': 'E', 'Ī': 'I', 'Ō': 'O', 'Ū': 'U',
+        # Lowercase with macron
+        'ā': 'a', 'ē': 'e', 'ī': 'i', 'ō': 'o', 'ū': 'u',
+        # Keep ü as is (it's meaningful in WG)
+    }
+
+    for accented, base in diacritic_map.items():
+        text = text.replace(accented, base)
+
+    return text
+
+
 def build_regex_pattern():
     """Build a regex pattern to match all Wade-Giles syllables."""
     # Sort by length (longest first) to ensure longer matches take precedence
@@ -1130,13 +1160,107 @@ class WadeGilesToPinyinConverter:
             for name, content in other_files.items():
                 zf.writestr(name, content)
 
+    def _convert_pdf_word(self, word_clean: str, wg_lookup: dict) -> str:
+        """
+        Convert a single word (possibly hyphenated) from Wade-Giles to Pinyin.
+
+        Handles:
+        - Diacritic normalization (Ê -> E)
+        - Apostrophe normalization
+        - Hyphenated names (split, convert each part, rejoin without hyphens)
+
+        Args:
+            word_clean: The word to convert (punctuation already stripped)
+            wg_lookup: Dictionary mapping lowercase WG terms to pinyin
+
+        Returns:
+            Converted pinyin string, or None if no conversion applicable
+        """
+        # Normalize diacritics and apostrophes
+        normalized = normalize_diacritics(word_clean)
+        normalized = normalize_apostrophe(normalized)
+
+        # Check if it's a hyphenated name
+        if '-' in normalized:
+            parts = normalized.split('-')
+            converted_parts = []
+            any_converted = False
+
+            for part in parts:
+                part_lower = part.lower()
+                if part_lower in wg_lookup:
+                    pinyin = wg_lookup[part_lower]
+                    # Apply case from original part
+                    converted_parts.append(apply_case(part, pinyin))
+                    any_converted = True
+                else:
+                    # Keep original if not in dictionary
+                    converted_parts.append(part)
+
+            if any_converted:
+                # Join without hyphens for proper Pinyin names
+                return ''.join(converted_parts)
+            return None
+
+        # Single word lookup
+        word_lower = normalized.lower()
+        if word_lower in wg_lookup:
+            pinyin = wg_lookup[word_lower]
+            return apply_case(normalized, pinyin)
+
+        return None
+
+    def _is_likely_proper_noun(self, word_clean: str, word_lower: str,
+                                is_sentence_start: bool, wg_lookup: dict) -> bool:
+        """
+        Determine if a word is likely a proper noun that should be converted.
+
+        Args:
+            word_clean: The cleaned word (punctuation stripped)
+            word_lower: Lowercase normalized version
+            is_sentence_start: Whether this word is at the start of a sentence
+            wg_lookup: The WG lookup dictionary
+
+        Returns:
+            True if the word should be converted
+        """
+        # Must be capitalized
+        if not word_clean[0].isupper():
+            return False
+
+        # Normalize for checking
+        normalized = normalize_diacritics(word_clean)
+        normalized = normalize_apostrophe(normalized)
+        normalized_lower = normalized.lower()
+
+        # If it contains apostrophe or hyphen, it's clearly WG - always convert
+        if "'" in normalized or "-" in normalized:
+            return True
+
+        # Check if it's a known postal romanization (always proper nouns)
+        if normalized_lower in POSTAL_ROMANIZATIONS:
+            return True
+
+        # At sentence start, be more conservative
+        if is_sentence_start:
+            # Only convert at sentence start if it's multi-character and distinctive
+            # (longer than 4 chars suggests a distinctive WG term)
+            if len(normalized) > 4:
+                return True
+            # Skip short words at sentence start (could be English)
+            return False
+
+        # Not at sentence start - if capitalized and in dictionary, convert it
+        return True
+
     def convert_pdf(self, input_path: str, output_path: str = None,
                     aggressive: bool = False) -> str:
         """
         Convert Wade-Giles in a PDF file to Pinyin.
 
-        Uses word-by-word extraction to avoid replacing text inside words.
-        Only converts proper nouns (capitalized words not at sentence start).
+        Uses search_for to find exact text matches and get precise bounding boxes.
+        Handles diacritics (Ê, ê) and hyphenated names (Tse-tung -> Zedong).
+        Only converts proper nouns (capitalized words).
         Uses Times New Roman (serif) font at 10.5pt.
 
         WARNING: PDF conversion has limitations:
@@ -1164,11 +1288,12 @@ class WadeGilesToPinyinConverter:
         else:
             output_path = Path(output_path)
 
-        # Build conversion lookup (lowercase WG -> pinyin)
-        wg_lookup = self._build_pdf_lookup()
+        # Build search terms: list of (search_term, replacement) tuples
+        # Only search for capitalized terms (proper nouns)
+        search_terms = self._build_pdf_search_list(aggressive)
 
         print(f"Opening PDF: {input_path}")
-        print(f"Loaded {len(wg_lookup)} conversion terms")
+        print(f"Loaded {len(search_terms)} search terms for conversion")
         doc = fitz.open(str(input_path))
         total_pages = len(doc)
         total_replacements = 0
@@ -1182,125 +1307,130 @@ class WadeGilesToPinyinConverter:
             page = doc[page_num]
             page_replacements = 0
 
-            # Extract words with their positions
-            # Returns list of (x0, y0, x1, y1, "word", block_no, line_no, word_no)
-            words = page.get_text("words")
-
-            # Group words by line for sentence-start detection
-            lines = {}
-            for word_info in words:
-                x0, y0, x1, y1, word, block_no, line_no, word_no = word_info
-                line_key = (block_no, line_no)
-                if line_key not in lines:
-                    lines[line_key] = []
-                lines[line_key].append(word_info)
-
-            # Sort words within each line by x position
-            for line_key in lines:
-                lines[line_key].sort(key=lambda w: w[0])  # Sort by x0
-
-            # Track replacements to make (collect first, apply after)
+            # Collect all replacements to make on this page
+            # Each item is (rect, replacement_text, original_word)
             replacements_to_make = []
 
-            for line_key, line_words in lines.items():
-                for i, word_info in enumerate(line_words):
-                    x0, y0, x1, y1, word, block_no, line_no, word_no = word_info
+            # Get all words on this page for exact matching
+            page_words = page.get_text("words")
+            # Build a dict of normalized word -> list of (rect, original_word)
+            word_positions = {}
+            for x0, y0, x1, y1, word, *_ in page_words:
+                # Normalize the word for lookup
+                word_clean = word.strip('.,;:!?()[]"\'')
+                if not word_clean or len(word_clean) < 2:
+                    continue
+                # Normalize diacritics and apostrophes
+                normalized = normalize_diacritics(word_clean)
+                normalized = normalize_apostrophe(normalized)
+                key = normalized
+                if key not in word_positions:
+                    word_positions[key] = []
+                word_positions[key].append((fitz.Rect(x0, y0, x1, y1), word))
 
-                    # Skip empty or very short words
-                    if len(word) < 2:
+            # Build a lookup from search terms for single-word matching
+            single_word_lookup = {}
+            for search_term, replacement in search_terms:
+                # Normalize the search term
+                search_normalized = normalize_diacritics(search_term)
+                search_normalized = normalize_apostrophe(search_normalized)
+                single_word_lookup[search_normalized] = replacement
+
+            # Also need lookup for individual syllables (for hyphenated words)
+            wg_lookup = self._build_pdf_lookup()
+
+            # Process each word position
+            for word_key, positions in word_positions.items():
+                for rect, original_word in positions:
+                    # Only convert capitalized words (proper nouns)
+                    word_clean = original_word.strip('.,;:!?()[]"\'')
+                    if not word_clean or not word_clean[0].isupper():
                         continue
 
-                    # Normalize the word for lookup
-                    # Strip punctuation from edges for matching
-                    word_clean = word.strip('.,;:!?()[]"\'')
-                    if not word_clean:
-                        continue
+                    # Normalize for lookup
+                    normalized = normalize_diacritics(word_clean)
+                    normalized = normalize_apostrophe(normalized)
 
-                    word_lower = normalize_apostrophe(word_clean.lower())
+                    replacement = None
 
-                    # Check if this word is in our WG dictionary
-                    if word_lower not in wg_lookup:
-                        continue
-
-                    # PROPER NOUN CHECK: Only convert if it's a proper noun
-                    # A proper noun is capitalized but NOT at sentence start
-
-                    # Check if word is capitalized
-                    if not word_clean[0].isupper():
-                        # Lowercase word - skip unless aggressive mode
-                        if not aggressive:
-                            continue
-
-                    # Check if this is at sentence start (previous word ends with . ! ?)
-                    is_sentence_start = False
-                    if i == 0:
-                        # First word in line - could be sentence start
-                        # Check if this is likely a new sentence
-                        is_sentence_start = True
+                    # First try exact match in search terms
+                    if normalized in single_word_lookup:
+                        replacement = single_word_lookup[normalized]
+                    # Then try hyphenated word handling
+                    elif '-' in normalized:
+                        parts = normalized.split('-')
+                        converted_parts = []
+                        any_converted = False
+                        for part in parts:
+                            part_lower = part.lower()
+                            if part_lower in wg_lookup:
+                                pinyin = wg_lookup[part_lower]
+                                converted_parts.append(apply_case(part, pinyin))
+                                any_converted = True
+                            else:
+                                converted_parts.append(part)
+                        if any_converted:
+                            replacement = ''.join(converted_parts)
+                    # Finally try single syllable lookup
                     else:
-                        prev_word = line_words[i - 1][4]  # Previous word text
-                        if prev_word and prev_word[-1] in '.!?':
-                            is_sentence_start = True
+                        normalized_lower = normalized.lower()
+                        if normalized_lower in wg_lookup:
+                            replacement = apply_case(normalized, wg_lookup[normalized_lower])
 
-                    # Skip sentence-start words unless they're clearly WG
-                    # (multi-syllable with apostrophe, or known postal romanization)
-                    if is_sentence_start and not aggressive:
-                        # Allow conversion if it's clearly WG (has apostrophe or hyphen)
-                        if "'" not in word_clean and "-" not in word_clean:
-                            # Check if it's a known postal romanization (always proper nouns)
-                            if word_lower not in POSTAL_ROMANIZATIONS:
-                                continue
+                    if replacement is None:
+                        continue
 
-                    # Get the pinyin replacement
-                    pinyin = wg_lookup[word_lower]
+                    # Build replacement preserving punctuation
+                    leading = ""
+                    trailing = ""
+                    for c in original_word:
+                        if c in '.,;:!?()[]"\' ':
+                            leading += c
+                        else:
+                            break
+                    for c in reversed(original_word):
+                        if c in '.,;:!?()[]"\' ':
+                            trailing = c + trailing
+                        else:
+                            break
+                    full_replacement = leading + replacement + trailing
 
-                    # Apply case from original word
-                    replacement = apply_case(word_clean, pinyin)
+                    replacements_to_make.append((rect, full_replacement, original_word))
 
-                    # Preserve any punctuation that was stripped
-                    if word != word_clean:
-                        # Find leading/trailing punctuation
-                        leading = ""
-                        trailing = ""
-                        for c in word:
-                            if c in '.,;:!?()[]"\' ':
-                                leading += c
-                            else:
-                                break
-                        for c in reversed(word):
-                            if c in '.,;:!?()[]"\' ':
-                                trailing = c + trailing
-                            else:
-                                break
-                        replacement = leading + replacement + trailing
+            # Remove duplicates (same rect matched by multiple search terms)
+            seen_rects = set()
+            unique_replacements = []
+            for item in replacements_to_make:
+                rect = item[0]
+                rect_key = (round(rect.x0, 1), round(rect.y0, 1), round(rect.x1, 1), round(rect.y1, 1))
+                if rect_key not in seen_rects:
+                    seen_rects.add(rect_key)
+                    unique_replacements.append(item)
 
-                    # Create rect for this word
-                    rect = fitz.Rect(x0, y0, x1, y1)
-                    replacements_to_make.append((rect, replacement))
+            # Sort by position (top to bottom, left to right)
+            unique_replacements.sort(key=lambda x: (x[0].y0, x[0].x0))
 
-            # Apply all replacements for this page
-            for rect, replacement in replacements_to_make:
-                # Add redaction to remove original text
-                page.add_redact_annot(rect, fill=(1, 1, 1))  # White fill
+            # Apply all replacements using overlay method (draw white rect + new text)
+            # This avoids the redaction issues that affect surrounding text
+            shape = page.new_shape()
+            for rect, replacement, _ in unique_replacements:
+                # Draw white rectangle to cover original text
+                shape.draw_rect(rect)
+                shape.finish(color=(1, 1, 1), fill=(1, 1, 1))
+                page_replacements += 1
+            shape.commit()
 
-            if replacements_to_make:
-                page.apply_redactions()
-
-                # Insert replacement text
-                for rect, replacement in replacements_to_make:
-                    # Calculate insertion point for baseline alignment
-                    # Position text at baseline (bottom of rect minus small offset)
-                    insert_point = fitz.Point(rect.x0, rect.y1 - 2)
-
-                    # Insert the replacement text using Times Roman at 10.5pt
-                    page.insert_text(
-                        insert_point,
-                        replacement,
-                        fontsize=FONT_SIZE,
-                        fontname="times-roman",
-                        color=(0, 0, 0)
-                    )
-                    page_replacements += 1
+            # Insert replacement text
+            for rect, replacement, _ in unique_replacements:
+                # Calculate insertion point for baseline
+                insert_point = fitz.Point(rect.x0, rect.y1 - 2)
+                page.insert_text(
+                    insert_point,
+                    replacement,
+                    fontsize=FONT_SIZE,
+                    fontname="times-roman",
+                    color=(0, 0, 0)
+                )
 
             total_replacements += page_replacements
 
@@ -1320,7 +1450,7 @@ class WadeGilesToPinyinConverter:
         Build a lookup dictionary for PDF word-by-word conversion.
 
         Returns a dictionary mapping lowercase WG terms to their pinyin equivalents.
-        This is used for whole-word matching (not substring search).
+        Excludes common English words to prevent false positives.
 
         Returns:
             Dictionary mapping lowercase WG terms to pinyin
@@ -1331,6 +1461,9 @@ class WadeGilesToPinyinConverter:
         for wg, pinyin in WG_TO_PINYIN.items():
             # Skip if identical
             if wg == pinyin:
+                continue
+            # Skip common English words
+            if wg in ENGLISH_EXCLUSIONS_LOWERCASE or wg in ENGLISH_EXCLUSIONS_ANY_CASE:
                 continue
             # Skip very short terms
             if len(wg) < 2:
@@ -1351,6 +1484,99 @@ class WadeGilesToPinyinConverter:
         lookup.update(hyphenated)
 
         return lookup
+
+    def _build_pdf_search_list(self, aggressive: bool = False) -> list:
+        """
+        Build a list of (search_term, replacement) tuples for PDF conversion.
+
+        Only includes capitalized terms (proper nouns) to avoid false positives.
+        Sorted by length (longest first) so longer matches take precedence.
+        Includes diacritic variants (Ê, ê) for comprehensive matching.
+
+        Args:
+            aggressive: If True, include lowercase terms and English words
+
+        Returns:
+            List of (search_term, replacement) tuples, sorted by length descending
+        """
+        terms = []
+        seen = set()  # Avoid duplicates
+
+        # Build lookup for conversion
+        wg_lookup = self._build_pdf_lookup()
+
+        # Process all WG terms, creating capitalized search terms
+        for wg, pinyin in WG_TO_PINYIN.items():
+            # Skip if identical
+            if wg == pinyin:
+                continue
+            # Skip very short terms
+            if len(wg) < 2:
+                continue
+            # Skip common English words unless aggressive
+            if not aggressive:
+                if wg in ENGLISH_EXCLUSIONS_LOWERCASE or wg in ENGLISH_EXCLUSIONS_ANY_CASE:
+                    continue
+
+            # Only add capitalized version for proper nouns
+            cap_wg = wg.capitalize()
+            cap_pinyin = pinyin.capitalize()
+            if cap_wg not in seen:
+                terms.append((cap_wg, cap_pinyin))
+                seen.add(cap_wg)
+
+            # Add diacritic variants (Ê for E, etc.)
+            # Map base vowels to their diacritic forms
+            diacritic_map = {'E': 'Ê', 'e': 'ê', 'A': 'Â', 'a': 'â',
+                             'O': 'Ô', 'o': 'ô', 'U': 'Û', 'u': 'û', 'I': 'Î', 'i': 'î'}
+            for base, diac in diacritic_map.items():
+                if base in cap_wg:
+                    variant = cap_wg.replace(base, diac)
+                    if variant not in seen:
+                        terms.append((variant, cap_pinyin))
+                        seen.add(variant)
+
+        # Add apostrophe variants
+        apostrophe_chars = ["'", "'", "'", "`", "´"]
+        new_terms = []
+        for search, repl in terms:
+            if "'" in search:
+                for apos in apostrophe_chars:
+                    variant = search.replace("'", apos)
+                    if variant not in seen:
+                        new_terms.append((variant, repl))
+                        seen.add(variant)
+        terms.extend(new_terms)
+
+        # Add common hyphenated names
+        hyphenated = [
+            ('Ên-Ssu', 'EnSi'), ('Ên-Fu', 'EnFu'),
+            ('Êrh-Yuan', 'ErYuan'), ('Êrh-Chou', 'ErZhou'),
+            ('Tse-tung', 'Zedong'), ('Tse-Tung', 'Zedong'),
+            ('En-lai', 'Enlai'), ('En-Lai', 'Enlai'),
+            ("Ch'ê-Chiang", 'CheJiang'), ("Ch'ê-Men", 'CheMen'),
+            ("Ch'ên-Chiang", 'ChenJiang'), ("Ch'ên-Pu", 'ChenBu'),
+            ("Ch'êng-Kung", 'ChengGong'), ("Ch'êng-Ho", 'ChengHe'),
+            ("Hsiao-p'ing", 'Xiaoping'), ("Hsiao-P'ing", 'Xiaoping'),
+            ('Kai-shek', 'Jieshi'), ('Kai-Shek', 'Jieshi'),
+            ('Yat-sen', 'Yixian'), ('Yat-Sen', 'Yixian'),
+            ('Chung-shan', 'Zhongshan'), ('Chung-Shan', 'Zhongshan'),
+        ]
+        for search, repl in hyphenated:
+            if search not in seen:
+                terms.append((search, repl))
+                seen.add(search)
+            # Also add apostrophe variants
+            for apos in apostrophe_chars:
+                variant = search.replace("'", apos)
+                if variant not in seen:
+                    terms.append((variant, repl))
+                    seen.add(variant)
+
+        # Sort by length (longest first) so longer matches take precedence
+        terms.sort(key=lambda x: len(x[0]), reverse=True)
+
+        return terms
 
     def _build_pdf_search_terms(self, aggressive: bool = False) -> dict:
         """
