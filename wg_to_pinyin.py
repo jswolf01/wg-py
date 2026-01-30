@@ -1135,6 +1135,9 @@ class WadeGilesToPinyinConverter:
         """
         Convert Wade-Giles in a PDF file to Pinyin.
 
+        Uses Times New Roman (serif) font and adjusts text placement for
+        proper baseline alignment.
+
         WARNING: PDF conversion has limitations:
         - Text positioning may be slightly off after replacement
         - Different-length replacements may cause visual artifacts
@@ -1161,11 +1164,11 @@ class WadeGilesToPinyinConverter:
             output_path = Path(output_path)
 
         # Build list of search terms from our conversion dictionary
-        # We need to search for multi-character terms, not individual syllables
-        # Focus on terms that are distinctive enough to avoid false positives
+        # Uses the FULL WG_TO_PINYIN dictionary for comprehensive conversion
         search_replacements = self._build_pdf_search_terms(aggressive)
 
         print(f"Opening PDF: {input_path}")
+        print(f"Loaded {len(search_replacements)} search terms for conversion")
         doc = fitz.open(str(input_path))
         total_pages = len(doc)
         total_replacements = 0
@@ -1192,16 +1195,22 @@ class WadeGilesToPinyinConverter:
                 # Insert replacement text
                 for rect in instances:
                     # Calculate insertion point (baseline)
-                    insert_point = fitz.Point(rect.x0, rect.y1 - 1)
+                    # Adjust upward by approximately half a letter height
+                    # The rect includes some padding, so we position at y1 minus
+                    # about 35% of the rect height to align with baseline
+                    baseline_offset = rect.height * 0.35
+                    insert_point = fitz.Point(rect.x0, rect.y1 - baseline_offset)
 
                     # Estimate font size from rect height
                     fontsize = rect.height * 0.85
 
-                    # Insert the replacement text
+                    # Insert the replacement text using Times Roman (serif font)
+                    # PyMuPDF built-in fonts: "times-roman", "times-bold", etc.
                     page.insert_text(
                         insert_point,
                         replacement,
                         fontsize=fontsize,
+                        fontname="times-roman",
                         color=(0, 0, 0)
                     )
                     page_replacements += 1
@@ -1223,98 +1232,98 @@ class WadeGilesToPinyinConverter:
         """
         Build a dictionary of search terms for PDF conversion.
 
-        For PDFs, we search for complete terms rather than syllables to avoid
-        false positives and positioning issues.
+        Uses the FULL WG_TO_PINYIN dictionary to convert all Wade-Giles terms.
+        Terms are sorted by length (longest first) and include case variants.
+
+        Args:
+            aggressive: If True, include terms that might be English words
 
         Returns:
             Dictionary mapping search terms to their Pinyin replacements
         """
         terms = {}
 
-        # Postal romanizations (these are safe to convert)
-        postal_terms = {
-            'Peking': 'Beijing',
-            'Nanking': 'Nanjing',
-            'Canton': 'Guangzhou',
-            'Tientsin': 'Tianjin',
-            'Chungking': 'Chongqing',
-            'Kwangsi': 'Guangxi',
-            'Kwangtung': 'Guangdong',
-            'Fukien': 'Fujian',
-            'Szechwan': 'Sichuan',
-            'Szechuan': 'Sichuan',
-            'Chekiang': 'Zhejiang',
-            'Kiangsi': 'Jiangxi',
-            'Kiangsu': 'Jiangsu',
-            'Shansi': 'Shanxi',
-            'Shensi': 'Shaanxi',
-            'Hopei': 'Hebei',
-            'Hopeh': 'Hebei',
-            'Honan': 'Henan',
-            'Hupei': 'Hubei',
-            'Hupeh': 'Hubei',
-            'Kansu': 'Gansu',
-            'Kweichow': 'Guizhou',
-            'Anhwei': 'Anhui',
-            'Tsingtao': 'Qingdao',
-            'Sinkiang': 'Xinjiang',
-            'Tsinghai': 'Qinghai',
-            'Ningsia': 'Ningxia',
-            'Yangtze': 'Yangzi',
-            'Yangtse': 'Yangzi',
-        }
-        terms.update(postal_terms)
+        # Process ALL entries from WG_TO_PINYIN
+        for wg, pinyin in WG_TO_PINYIN.items():
+            # Skip if WG and Pinyin are identical (no change needed)
+            if wg == pinyin:
+                continue
 
-        # Common hyphenated names (convert and remove hyphen)
+            # Skip very short terms that are likely false positives
+            if len(wg) < 2:
+                continue
+
+            # Skip common English words unless aggressive mode
+            if not aggressive:
+                if wg in ENGLISH_EXCLUSIONS_ANY_CASE:
+                    continue
+                if wg in ENGLISH_EXCLUSIONS_LOWERCASE:
+                    # Only add capitalized version
+                    cap_wg = wg.capitalize()
+                    cap_pinyin = pinyin.capitalize()
+                    terms[cap_wg] = cap_pinyin
+                    continue
+
+            # Add capitalized version (most common in proper names)
+            cap_wg = wg.capitalize()
+            cap_pinyin = pinyin.capitalize()
+            terms[cap_wg] = cap_pinyin
+
+            # Add lowercase version for words in running text
+            terms[wg] = pinyin
+
+            # Add UPPERCASE version for titles/headers
+            terms[wg.upper()] = pinyin.upper()
+
+        # Handle apostrophe variants for aspirated consonants
+        # PDFs may use different apostrophe characters
+        apostrophe_variants = ["'", "'", "'", "`", "´"]
+        terms_with_apostrophes = {}
+
+        for wg, pinyin in list(terms.items()):
+            if "'" in wg:
+                # Add variants with different apostrophe characters
+                for apos in apostrophe_variants:
+                    variant = wg.replace("'", apos)
+                    if variant not in terms:
+                        terms_with_apostrophes[variant] = pinyin
+
+        terms.update(terms_with_apostrophes)
+
+        # Add common hyphenated names (convert and remove hyphen)
         hyphenated_names = {
             'Tse-tung': 'Zedong',
             'Tse-Tung': 'Zedong',
+            'TSE-TUNG': 'ZEDONG',
             'En-lai': 'Enlai',
             'En-Lai': 'Enlai',
-            'Hsiao-p\'ing': 'Xiaoping',
+            'EN-LAI': 'ENLAI',
+            "Hsiao-p'ing": 'Xiaoping',
+            "Hsiao-P'ing": 'Xiaoping',
             'Kai-shek': 'Jieshi',
+            'Kai-Shek': 'Jieshi',
             'Yat-sen': 'Yixian',
+            'Yat-Sen': 'Yixian',
             'Chung-shan': 'Zhongshan',
+            'Chung-Shan': 'Zhongshan',
+            'Chiang-nan': 'Jiangnan',
+            'Hua-pei': 'Huabei',
+            'Hua-nan': 'Huanan',
         }
         terms.update(hyphenated_names)
 
-        # Dynasty and era names
-        dynasty_terms = {
-            'Ch\'ing': 'Qing',
-            'Ch\'in': 'Qin',
-            'T\'ang': 'Tang',
-            'Sung': 'Song',
-            'Ming': 'Ming',  # Same, but include for completeness
-            'Yuan': 'Yuan',  # Same
-            'Han': 'Han',    # Same
-        }
-        terms.update(dynasty_terms)
-
-        # Common standalone terms that are unambiguous
-        common_terms = {
-            'Confucius': 'Confucius',  # Keep as is (Latin name)
+        # Add Taoism/Daoism variants
+        tao_terms = {
             'Taoism': 'Daoism',
+            'TAOISM': 'DAOISM',
+            'taoism': 'daoism',
             'Taoist': 'Daoist',
-            'Tao': 'Dao',
+            'TAOIST': 'DAOIST',
+            'taoist': 'daoist',
+            'Taoists': 'Daoists',
+            'taoists': 'daoists',
         }
-        terms.update(common_terms)
-
-        # If aggressive mode, add more terms
-        if aggressive:
-            aggressive_terms = {
-                'Chou': 'Zhou',
-                'Chao': 'Zhao',
-                'Cheng': 'Zheng',
-                'Ching': 'Jing',
-                'Chin': 'Jin',
-                'Chu': 'Zhu',
-                'Kung': 'Gong',
-                'Tung': 'Dong',
-                'Hsiang': 'Xiang',
-                'Hsiung': 'Xiong',
-                'Hsien': 'Xian',
-            }
-            terms.update(aggressive_terms)
+        terms.update(tao_terms)
 
         return terms
 
